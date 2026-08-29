@@ -23,6 +23,7 @@ import logging
 import datetime as dt
 
 import requests
+import yfinance as yf
 from dotenv import load_dotenv
 
 import config
@@ -86,6 +87,8 @@ class Questrade:
         self.access_token = None
         self.api_server = None
         self.token_expires_at = 0.0
+        self._symbol_names = {}  # symbolId -> ticker, for the market-data fallback
+        self._md_scope_blocked = False
         self._ensure_token()
 
     # ---- Auth -------------------------------------------------------------
@@ -137,10 +140,42 @@ class Questrade:
         res = self._get("v1/symbols", params={"names": name})["symbols"]
         if not res:
             raise ValueError(f"Symbol {name} not found")
-        return res[0]["symbolId"]
+        sym_id = res[0]["symbolId"]
+        self._symbol_names[sym_id] = res[0]["symbol"]
+        return sym_id
+
+    # Quotes/candles need the `read_md` OAuth scope, which manual-authorization
+    # tokens for personal apps may lack (Questrade error 1016). When that
+    # happens, fall back to yfinance (delayed data) so DRY_RUN keeps working.
+
+    def _md_fallback_ticker(self, symbol_id):
+        name = self._symbol_names.get(symbol_id)
+        if not name:
+            data = self._get(f"v1/symbols/{symbol_id}")["symbols"][0]
+            name = self._symbol_names[symbol_id] = data["symbol"]
+        if not self._md_scope_blocked:
+            self._md_scope_blocked = True
+            log.warning(
+                "Questrade refused market data (missing read_md OAuth scope). "
+                "Falling back to yfinance — prices may be delayed.")
+        return name
+
+    @staticmethod
+    def _is_scope_error(err):
+        r = getattr(err, "response", None)
+        return r is not None and r.status_code == 403
 
     def last_price(self, symbol_id):
-        q = self._get(f"v1/markets/quotes/{symbol_id}")["quotes"][0]
+        try:
+            q = self._get(f"v1/markets/quotes/{symbol_id}")["quotes"][0]
+        except requests.HTTPError as e:
+            if not self._is_scope_error(e):
+                raise
+            ticker = self._md_fallback_ticker(symbol_id)
+            hist = yf.Ticker(ticker).history(period="1d", interval="1m")
+            if hist.empty:
+                raise ValueError(f"No fallback price data for {ticker}")
+            return float(hist["Close"].iloc[-1])
         if q.get("delay"):
             log.warning("Quote is DELAYED (no real-time data package).")
         return q.get("lastTradePrice") or q.get("bidPrice")
@@ -149,11 +184,19 @@ class Questrade:
         # Docs require ISO-8601 datetimes with a timezone offset.
         end = dt.datetime.now(dt.timezone.utc)
         start = end - dt.timedelta(days=count * 2 + 10)  # buffer for weekends
-        data = self._get(f"v1/markets/candles/{symbol_id}", params={
-            "startTime": start.isoformat(timespec="seconds"),
-            "endTime": end.isoformat(timespec="seconds"),
-            "interval": "OneDay",
-        })
+        try:
+            data = self._get(f"v1/markets/candles/{symbol_id}", params={
+                "startTime": start.isoformat(timespec="seconds"),
+                "endTime": end.isoformat(timespec="seconds"),
+                "interval": "OneDay",
+            })
+        except requests.HTTPError as e:
+            if not self._is_scope_error(e):
+                raise
+            ticker = self._md_fallback_ticker(symbol_id)
+            hist = yf.Ticker(ticker).history(start=start.date(), end=end.date(),
+                                             interval="1d")
+            return [float(c) for c in hist["Close"].tolist()]
         return [c["close"] for c in data["candles"]]
 
     def position_qty(self, account_id, symbol_id):

@@ -45,6 +45,14 @@ means that even with `DRY_RUN = False`, `place_order()` may be refused with
 HTTP 403 (error code 1016, "Request is out-of-allowed OAuth scopes"). Nothing
 in this repo can bypass that; it is a Questrade account-level permission.
 
+**Market-data scope caveat (verified against a real account):** manual
+authorization tokens for personal apps may also lack the `read_md` scope, in
+which case quotes (`v1/markets/quotes`) and candles (`v1/markets/candles`)
+return 403 / code 1016 while account endpoints work fine. The bot detects
+this and falls back to yfinance for prices and daily closes (delayed data,
+fine for a daily-candle strategy in DRY_RUN, but check whether your token
+has `read_md` before ever considering live use).
+
 ## Setup
 
 ```bash
