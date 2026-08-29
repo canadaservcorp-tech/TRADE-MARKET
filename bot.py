@@ -9,6 +9,7 @@ Stop: Ctrl+C  (or create the kill-switch file)
 """
 
 import os
+import csv
 import time
 import json
 import logging
@@ -16,7 +17,7 @@ from datetime import datetime
 
 import config
 from questrade import Questrade, OrderError
-from strategies import get_signal_fn
+from strategies import get_signal_fn, ma_snapshot
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,12 +27,21 @@ logging.basicConfig(
 log = logging.getLogger("bot")
 
 
+PAPER_CSV = "paper_trades.csv"
+
+
 def load_state():
     try:
         with open("state.json") as f:
-            return json.load(f)
+            state = json.load(f)
     except FileNotFoundError:
-        return {"trades_today": 0, "date": str(datetime.now().date())}
+        state = {"trades_today": 0, "date": str(datetime.now().date())}
+    # Paper-trading record for the DRY_RUN watch phase.
+    state.setdefault("paper_cash", config.PAPER_STARTING_CASH)
+    state.setdefault("paper_shares", 0)
+    state.setdefault("paper_entry", 0.0)
+    state.setdefault("last_csv_date", "")
+    return state
 
 
 def save_state(s):
@@ -50,16 +60,46 @@ def kill_switch_active():
     return os.path.exists(config.KILL_SWITCH_FILE) or os.getenv("KILL_SWITCH") == "1"
 
 
-def act(qt, acct, sym_id, side, qty):
+def append_paper_csv(date, action, price, balance):
+    """One spreadsheet-friendly line per day/action: the paper-trading record."""
+    new_file = not os.path.exists(PAPER_CSV)
+    with open(PAPER_CSV, "a", newline="") as f:
+        w = csv.writer(f)
+        if new_file:
+            w.writerow(["date", "symbol", "action", "price", "paper_balance"])
+        w.writerow([date, config.SYMBOL, action, f"{price:.2f}", f"{balance:.2f}"])
+
+
+def act(qt, acct, sym_id, side, qty, price, state):
     """Central place trades pass through — respects DRY_RUN.
 
     Returns True if the trade went through (or would have, in DRY_RUN).
     A rejected order is logged and NOT retried: Questrade can create an
     order and still return an error, so a blind retry could double-fire.
+
+    In DRY_RUN the hypothetical position is tracked in state (paper_cash /
+    paper_shares / paper_entry) and each would-be trade is appended to
+    paper_trades.csv, so the watch phase leaves a reviewable record.
     """
     qty = int(qty)
     if config.DRY_RUN:
-        log.info(f"[DRY_RUN] Would {side} {qty} shares — NO order sent.")
+        today = str(datetime.now().date())
+        if side == "buy":
+            state["paper_cash"] -= qty * price
+            state["paper_shares"] = qty
+            state["paper_entry"] = price
+            pnl_txt = ""
+        else:
+            pnl = (price - state["paper_entry"]) * qty
+            pnl_txt = f", P&L on this trade: ${pnl:+.2f}"
+            state["paper_cash"] += qty * price
+            state["paper_shares"] = 0
+            state["paper_entry"] = 0.0
+        balance = state["paper_cash"] + state["paper_shares"] * price
+        log.info(f"[DRY_RUN] Would {side} {qty} {config.SYMBOL} @ ${price:.2f} "
+                 f"— NO order sent. Paper balance: ${balance:.2f}{pnl_txt}")
+        append_paper_csv(today, side.upper(), price, balance)
+        state["last_csv_date"] = today
         return True
     log.info(f"[LIVE] Sending {side} order for {qty} shares.")
     try:
@@ -91,13 +131,20 @@ def main():
             sym_id = qt.symbol_id(config.SYMBOL)
             state = reset_daily(state)
 
-            qty_held, entry = qt.position_qty(acct, sym_id)
+            # In DRY_RUN the position is the hypothetical (paper) one — the
+            # real account never trades, so sells/stops would never trigger
+            # if we read the real (always-empty) position.
+            if config.DRY_RUN:
+                qty_held, entry = state["paper_shares"], state["paper_entry"]
+            else:
+                qty_held, entry = qt.position_qty(acct, sym_id)
 
             # 0. Kill switch — flatten and stop
             if kill_switch_active():
                 log.warning("KILL SWITCH detected. Flattening and stopping.")
                 if qty_held > 0:
-                    act(qt, acct, sym_id, "sell", qty_held)
+                    act(qt, acct, sym_id, "sell", qty_held,
+                        qt.last_price(sym_id), state)
                 save_state(state)
                 return
 
@@ -115,23 +162,40 @@ def main():
                 change = (price - entry) / entry
                 if change <= -config.STOP_LOSS_PCT:
                     log.info(f"STOP-LOSS {change:.1%}. Selling.")
-                    act(qt, acct, sym_id, "sell", qty_held)
+                    act(qt, acct, sym_id, "sell", qty_held, price, state)
                     acted = True
                 elif change >= config.TAKE_PROFIT_PCT:
                     log.info(f"TAKE-PROFIT {change:.1%}. Selling.")
-                    act(qt, acct, sym_id, "sell", qty_held)
+                    act(qt, acct, sym_id, "sell", qty_held, price, state)
                     acted = True
 
             # 2. Strategy signal
             if not acted:
                 closes = qt.daily_closes(sym_id, config.LONG_WINDOW)
                 sig = signal_fn(closes)
+
+                # Paper-trading record line: everything needed to review the
+                # watch phase later at a glance.
+                mas = ma_snapshot(closes) if config.STRATEGY == "ma_cross" else None
+                ma_txt = (f" MA{config.SHORT_WINDOW}=${mas[0]:.2f}"
+                          f" MA{config.LONG_WINDOW}=${mas[1]:.2f}" if mas else "")
+                if qty_held > 0:
+                    unrealized = (price - entry) * qty_held
+                    pos_txt = (f"{int(qty_held)} sh @ ${entry:.2f} "
+                               f"(unrealized ${unrealized:+.2f})")
+                else:
+                    pos_txt = "flat"
+                paper_balance = state["paper_cash"] + state["paper_shares"] * price
+                log.info(f"{config.SYMBOL} price=${price:.2f}{ma_txt} "
+                         f"signal={sig} paper position: {pos_txt}, "
+                         f"paper balance: ${paper_balance:.2f}")
+
                 if sig == "buy" and qty_held == 0:
                     if state["trades_today"] < config.MAX_TRADES_PER_DAY:
                         # Cash account: whole shares only, no fractional shares.
                         qty = int(config.MAX_POSITION_DOLLARS // price)
                         if qty >= 1:
-                            if act(qt, acct, sym_id, "buy", qty):
+                            if act(qt, acct, sym_id, "buy", qty, price, state):
                                 state["trades_today"] += 1
                         else:
                             log.info(
@@ -141,10 +205,17 @@ def main():
                     else:
                         log.info("Daily trade cap reached.")
                 elif sig == "sell" and qty_held > 0:
-                    if act(qt, acct, sym_id, "sell", qty_held):
+                    if act(qt, acct, sym_id, "sell", qty_held, price, state):
                         state["trades_today"] += 1
                 else:
                     log.info(f"No action. Signal={sig}, holding={qty_held}.")
+
+            # 3. Daily one-line summary — HOLD row if nothing traded today.
+            today = str(datetime.now().date())
+            if config.DRY_RUN and state.get("last_csv_date") != today:
+                balance = state["paper_cash"] + state["paper_shares"] * price
+                append_paper_csv(today, "HOLD", price, balance)
+                state["last_csv_date"] = today
 
             save_state(state)
 

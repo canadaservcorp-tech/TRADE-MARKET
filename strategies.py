@@ -14,14 +14,19 @@ import config
 log = logging.getLogger("strategies")
 
 
-def ma_cross_signal(closes):
-    """Moving-average crossover: fast MA crossing the slow MA."""
-    if len(closes) < config.LONG_WINDOW + 1:
+def ma_cross_signal(closes, short_window=None, long_window=None):
+    """Moving-average crossover: fast MA crossing the slow MA.
+
+    Windows default to config; the backtest grid passes explicit ones.
+    """
+    short_window = short_window or config.SHORT_WINDOW
+    long_window = long_window or config.LONG_WINDOW
+    if len(closes) < long_window + 1:
         log.warning("Not enough price history yet.")
         return None
     s = pd.Series(closes)
-    short = s.rolling(config.SHORT_WINDOW).mean()
-    long = s.rolling(config.LONG_WINDOW).mean()
+    short = s.rolling(short_window).mean()
+    long = s.rolling(long_window).mean()
     ps, pl = short.iloc[-2], long.iloc[-2]
     cs, cl = short.iloc[-1], long.iloc[-1]
     if ps <= pl and cs > cl:
@@ -29,6 +34,15 @@ def ma_cross_signal(closes):
     if ps >= pl and cs < cl:
         return "sell"
     return None
+
+
+def ma_snapshot(closes):
+    """Current (short MA, long MA) values, or None if not enough history."""
+    if len(closes) < config.LONG_WINDOW:
+        return None
+    s = pd.Series(closes)
+    return (s.rolling(config.SHORT_WINDOW).mean().iloc[-1],
+            s.rolling(config.LONG_WINDOW).mean().iloc[-1])
 
 
 def rsi(closes, period):

@@ -26,6 +26,18 @@ RSI_PERIOD = 14
 RSI_OVERSOLD = 30      # buy when RSI crosses up through this
 RSI_OVERBOUGHT = 70    # sell when RSI crosses down through this
 
+# --- Backtest grid (python backtest.py --grid) ---
+# Symbols and (short, long) MA windows to sweep. Cheap symbols matter:
+# with MAX_POSITION_DOLLARS = 40, one share of an expensive stock is
+# unaffordable and every buy signal gets skipped.
+BACKTEST_SYMBOLS = ["AAPL", "F", "SOFI"]
+BACKTEST_MA_GRID = [(10, 30), (20, 50), (50, 200)]
+
+# --- Paper-trading record (DRY_RUN watch phase) ---
+# Hypothetical starting balance used for the paper position tracked in
+# state.json and the running balance written to paper_trades.csv.
+PAPER_STARTING_CASH = 50.0
+
 # --- Risk controls ---
 MAX_POSITION_DOLLARS = 40    # with a $50 deposit, keep this under the balance
 STOP_LOSS_PCT = 0.05         # sell if down 5% from entry
