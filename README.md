@@ -75,12 +75,27 @@ one to `token.json` automatically.
 # validate the strategy first (no account needed — uses free yfinance data)
 python backtest.py
 
+# sweep several symbols and MA settings in one run (edit BACKTEST_SYMBOLS /
+# BACKTEST_MA_GRID in config.py) — prints a summary table with overfit warnings
+python backtest.py --grid
+
+# honesty check: first ~70% in-sample vs held-out last ~30%. A strategy that
+# wins in-sample but loses out-of-sample is overfit — trust this over raw returns.
+python backtest.py --walk-forward
+python backtest.py --grid --walk-forward
+
 # run the bot in DRY_RUN (logs trades, sends nothing)
 python bot.py
 ```
 
 Switch strategies by editing `config.py` (`STRATEGY = "ma_cross"` or
 `"rsi"`) and re-running `backtest.py` to compare.
+
+In DRY_RUN the bot keeps a paper-trading record: each loop logs the price,
+both MA values, the signal, and the hypothetical position/P&L (starting from
+`PAPER_STARTING_CASH`), and it appends one line per day/trade to
+`paper_trades.csv` (date, action, price, running paper balance — open it as a
+spreadsheet). Both files are gitignored.
 
 ## Git
 

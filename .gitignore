@@ -12,3 +12,4 @@ venv/
 logs/
 *.log
 state.json
+paper_trades.csv
