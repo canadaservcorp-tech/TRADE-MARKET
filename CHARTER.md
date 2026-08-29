@@ -65,4 +65,32 @@ Silence or vague optimism is a failure; honest detail is the product.
 | Honest reporting | Every loop logs price, MAs, signal, paper position/P&L; each day/trade appends a row with a `reason` to `paper_trades.csv` |
 | Prove it on paper first | `backtest.py --grid` (multi-symbol/multi-setting) and `--walk-forward` (overfit check) — see README go-live checklist |
 
+## Additional principles (adopted from the owner's quant-advisor plan)
+
+These are compatible with this charter and adopted as guiding rules. Marked
+**(future)** items are NOT implemented in code — any implementation must first
+be proven through `backtest.py --grid --walk-forward` like everything else.
+
+1. **Zero leverage, cash only.** Never trade on margin. (Already true: this is
+   a cash account and the bot never borrows.)
+2. **Daily-loss circuit breaker (future).** If the (paper) portfolio drops 5%
+   in one day, halt all new entries until the next session.
+3. **Cooldown after a loss (future).** After a losing exit, wait before the
+   next entry — no revenge trading.
+4. **Volatility-aware stops (future).** Stops sized from measured volatility
+   (e.g. ATR multiples) rather than a fixed percent — only if backtests show
+   it beats the current fixed stop out-of-sample.
+5. **No pre-market gap chasing.** If a stock gaps up sharply, do not buy into
+   the open. (Already effectively true: the bot trades daily-close crossovers,
+   not opening momentum.)
+6. **Every trade is an independent probability event.** No doubling after a
+   loss, no "it owes me one." Judge the system on 100+ trades, not the last one.
+
+Explicitly REJECTED from that plan (violates the charter or is untestable
+with this system's data): sentiment/macro layers (Fear & Greed, Fed outlook,
+VIX regimes — no data source, invites invented inputs), discretionary
+"confidence scores" (fabricated precision), and percent-of-equity risk sizing
+(2% of $50 = $1 — meaningless with whole shares; revisit only with a larger
+account).
+
 Not financial advice. Past performance does not predict future results.
