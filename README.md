@@ -94,8 +94,11 @@ Switch strategies by editing `config.py` (`STRATEGY = "ma_cross"` or
 In DRY_RUN the bot keeps a paper-trading record: each loop logs the price,
 both MA values, the signal, and the hypothetical position/P&L (starting from
 `PAPER_STARTING_CASH`), and it appends one line per day/trade to
-`paper_trades.csv` (date, action, price, running paper balance — open it as a
-spreadsheet). Both files are gitignored.
+`paper_trades.csv` (date, action, price, running paper balance, and the reason
+— open it as a spreadsheet). Both files are gitignored.
+
+The agent's rules of engagement are written down in [CHARTER.md](CHARTER.md),
+including a table of how each rule is enforced in code.
 
 ## Git
 
