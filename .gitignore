@@ -1,0 +1,14 @@
+# Secrets — NEVER commit these
+.env
+token.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Logs & state
+logs/
+*.log
+state.json
