@@ -60,17 +60,18 @@ def kill_switch_active():
     return os.path.exists(config.KILL_SWITCH_FILE) or os.getenv("KILL_SWITCH") == "1"
 
 
-def append_paper_csv(date, action, price, balance):
-    """One spreadsheet-friendly line per day/action: the paper-trading record."""
+def append_paper_csv(date, action, price, balance, reason):
+    """One spreadsheet-friendly line per day/action: the paper-trading record.
+    The reason column is the audit trail required by CHARTER.md."""
     new_file = not os.path.exists(PAPER_CSV)
     with open(PAPER_CSV, "a", newline="") as f:
         w = csv.writer(f)
         if new_file:
-            w.writerow(["date", "symbol", "action", "price", "paper_balance"])
-        w.writerow([date, config.SYMBOL, action, f"{price:.2f}", f"{balance:.2f}"])
+            w.writerow(["date", "symbol", "action", "price", "paper_balance", "reason"])
+        w.writerow([date, config.SYMBOL, action, f"{price:.2f}", f"{balance:.2f}", reason])
 
 
-def act(qt, acct, sym_id, side, qty, price, state):
+def act(qt, acct, sym_id, side, qty, price, state, reason="strategy signal"):
     """Central place trades pass through — respects DRY_RUN.
 
     Returns True if the trade went through (or would have, in DRY_RUN).
@@ -98,7 +99,7 @@ def act(qt, acct, sym_id, side, qty, price, state):
         balance = state["paper_cash"] + state["paper_shares"] * price
         log.info(f"[DRY_RUN] Would {side} {qty} {config.SYMBOL} @ ${price:.2f} "
                  f"— NO order sent. Paper balance: ${balance:.2f}{pnl_txt}")
-        append_paper_csv(today, side.upper(), price, balance)
+        append_paper_csv(today, side.upper(), price, balance, reason)
         state["last_csv_date"] = today
         return True
     log.info(f"[LIVE] Sending {side} order for {qty} shares.")
@@ -144,7 +145,7 @@ def main():
                 log.warning("KILL SWITCH detected. Flattening and stopping.")
                 if qty_held > 0:
                     act(qt, acct, sym_id, "sell", qty_held,
-                        qt.last_price(sym_id), state)
+                        qt.last_price(sym_id), state, reason="kill switch")
                 save_state(state)
                 return
 
@@ -162,11 +163,13 @@ def main():
                 change = (price - entry) / entry
                 if change <= -config.STOP_LOSS_PCT:
                     log.info(f"STOP-LOSS {change:.1%}. Selling.")
-                    act(qt, acct, sym_id, "sell", qty_held, price, state)
+                    act(qt, acct, sym_id, "sell", qty_held, price, state,
+                        reason=f"stop-loss ({change:.1%})")
                     acted = True
                 elif change >= config.TAKE_PROFIT_PCT:
                     log.info(f"TAKE-PROFIT {change:.1%}. Selling.")
-                    act(qt, acct, sym_id, "sell", qty_held, price, state)
+                    act(qt, acct, sym_id, "sell", qty_held, price, state,
+                        reason=f"take-profit ({change:.1%})")
                     acted = True
 
             # 2. Strategy signal
@@ -214,7 +217,8 @@ def main():
             today = str(datetime.now().date())
             if config.DRY_RUN and state.get("last_csv_date") != today:
                 balance = state["paper_cash"] + state["paper_shares"] * price
-                append_paper_csv(today, "HOLD", price, balance)
+                append_paper_csv(today, "HOLD", price, balance,
+                                 "no signal" if not acted else "risk exit today")
                 state["last_csv_date"] = today
 
             save_state(state)
