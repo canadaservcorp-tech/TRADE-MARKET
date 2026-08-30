@@ -5,7 +5,22 @@
 # False = places REAL orders with REAL money.
 DRY_RUN = True
 
-# --- Environment: "live" or "practice" ---
+# --- Broker: "questrade" or "ibkr" ---
+# "ibkr" needs IB Gateway or TWS running locally with the API enabled
+# (see README "IBKR setup"). Point IBKR_PORT at the PAPER port first.
+BROKER = "questrade"
+
+# IBKR connection settings (only used when BROKER = "ibkr").
+# Ports — TWS: paper 7497 / live 7496.  IB Gateway: paper 4002 / live 4001.
+IBKR_HOST = "127.0.0.1"
+IBKR_PORT = 7497
+IBKR_CLIENT_ID = 1
+# Belt-and-braces: even if DRY_RUN were ever flipped, orders addressed to a
+# LIVE IBKR account (id starts with "U") are refused unless this is True.
+# Paper accounts (id starts with "D") are unaffected.
+IBKR_ALLOW_LIVE_ORDERS = False
+
+# --- Environment: "live" or "practice" (Questrade only) ---
 # Questrade offers a free practice account with its own login portal
 # (practicelogin.questrade.com). A practice refresh token only works with
 # ENVIRONMENT = "practice", and a live token only with "live" — the two

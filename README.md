@@ -1,6 +1,8 @@
-# Questrade Trading Bot (MA crossover / RSI, DRY_RUN by default)
+# Trading Bot — Questrade or IBKR (MA crossover / RSI, DRY_RUN by default)
 
-A personal automated trading bot for a Questrade self-directed cash account.
+A personal automated trading bot for a Questrade self-directed cash account
+or an Interactive Brokers (IBKR) account (`BROKER = "ibkr"` in `config.py`
+— see [IBKR setup](#ibkr-setup-paper-trading-first) below).
 Every loop it pulls daily candles for one symbol, computes a signal
 (moving-average crossover or RSI, selectable in `config.py`), applies a hard
 risk layer (stop-loss, take-profit, position cap, daily trade cap), and either
@@ -100,6 +102,46 @@ both MA values, the signal, and the hypothetical position/P&L (starting from
 The agent's rules of engagement are written down in [CHARTER.md](CHARTER.md),
 including a table of how each rule is enforced in code.
 
+## IBKR setup (paper trading first)
+
+IBKR is the one mainstream Canadian broker whose API officially supports
+retail automated trading. The bot talks to it through the official TWS API
+socket via the [ib_async](https://github.com/ib-api-reloaded/ib_async)
+library — no reverse-engineered endpoints.
+
+**Three distinct layers — don't confuse them:**
+
+1. **DRY_RUN (default):** the bot computes signals and logs would-be trades;
+   nothing is ever sent to IBKR. Same as with Questrade.
+2. **IBKR paper account:** simulated money, real prices, real order
+   mechanics. This is where any real order testing happens. Paper account
+   ids start with `D`; live ids start with `U`.
+3. **IBKR live account:** real money. The bot **refuses** to send an order
+   to a live account (`U...`) even if `DRY_RUN` were flipped, unless the
+   owner also sets `IBKR_ALLOW_LIVE_ORDERS = True` in `config.py`.
+
+**One-time setup on the IBKR website:** log in → Settings → Account Settings
+→ find **Paper Trading Account** → create it. IBKR emails the paper username;
+you set its password there. The paper account gets simulated funds.
+
+**On the machine that runs the bot:**
+
+1. Install **IB Gateway** (lighter) or **Trader Workstation (TWS)** from
+   ibkr.com → Trading Platforms. Log in with your **paper** username.
+2. Enable the API: Configure → API → Settings → tick *Enable ActiveX and
+   Socket Clients*; keep *Read-Only API* ticked while in the watch phase.
+   Note the socket port: TWS paper = **7497**, IB Gateway paper = **4002**
+   (live: 7496 / 4001 — don't use these).
+3. In `config.py`: set `BROKER = "ibkr"` and `IBKR_PORT` to the paper port.
+4. `python bot.py` — the startup log prints the connected account id and
+   whether it is PAPER or LIVE. It must say PAPER (`D...`).
+
+No API keys or tokens are involved: authentication is your Gateway/TWS login,
+which stays on your machine. Nothing IBKR-related goes in `.env`.
+The bot requests delayed market data, so no paid data subscription is needed.
+Market hours are checked from the contract's own IBKR trading schedule
+(holidays and half-days respected); any data error fails closed — no trade.
+
 ## Git
 
 ```bash
@@ -135,9 +177,15 @@ exposed.
    sane quantities, no orders outside market hours, cap respected).
 3. Endpoints verified against the Questrade docs (done — see VERIFICATION
    below), and you understand the partner-only trade-scope caveat above.
-4. Only then, and only if you accept the risk: set `DRY_RUN = False` in
-   `config.py`. Start with the smallest possible position. Remember the kill
-   switch: `touch KILL_SWITCH`.
+4. **IBKR paper stage:** with `BROKER = "ibkr"` pointed at the **paper**
+   account (id `D...`), the owner may set `DRY_RUN = False` there — orders go
+   to simulated money with real order mechanics, and the live-account guard
+   still blocks any `U...` account. Run for a few weeks and review the
+   record. Only a paper record that beats buy-and-hold earns the next step.
+5. Only then, and only if you accept the risk: set `DRY_RUN = False` in
+   `config.py` (and for IBKR live, also `IBKR_ALLOW_LIVE_ORDERS = True` and
+   the live port — three separate deliberate switches). Start with the
+   smallest possible position. Remember the kill switch: `touch KILL_SWITCH`.
 
 Not financial advice; past backtest performance does not predict live results.
 
