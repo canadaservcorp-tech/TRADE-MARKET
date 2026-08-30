@@ -1,5 +1,6 @@
 """
-Questrade trading bot — DRY_RUN by default (logs trades, sends nothing).
+Trading bot (Questrade or IBKR via config.BROKER) — DRY_RUN by default
+(logs trades, sends nothing).
 Strategy: selectable via config.STRATEGY. Risk layer enforces stops + daily cap.
 Orders are only attempted during regular market hours, and a kill switch
 (KILL_SWITCH file or KILL_SWITCH=1 env var) flattens the position and exits.
@@ -17,6 +18,7 @@ from datetime import datetime
 
 import config
 from questrade import Questrade, OrderError
+from ibkr import IBKR
 from strategies import get_signal_fn, ma_snapshot
 
 logging.basicConfig(
@@ -71,6 +73,16 @@ def append_paper_csv(date, action, price, balance, reason):
         w.writerow([date, config.SYMBOL, action, f"{price:.2f}", f"{balance:.2f}", reason])
 
 
+def make_client():
+    """Both clients expose the same interface (account_id, symbol_id,
+    last_price, daily_closes, position_qty, market_open_now, place_order)."""
+    if config.BROKER == "ibkr":
+        return IBKR()
+    if config.BROKER == "questrade":
+        return Questrade()  # token is cached; refreshes only near expiry
+    raise ValueError(f"Unknown config.BROKER: {config.BROKER!r}")
+
+
 def act(qt, acct, sym_id, side, qty, price, state, reason="strategy signal"):
     """Central place trades pass through — respects DRY_RUN.
 
@@ -115,7 +127,8 @@ def act(qt, acct, sym_id, side, qty, price, state, reason="strategy signal"):
 
 def main():
     mode = "DRY_RUN (no real orders)" if config.DRY_RUN else "LIVE — REAL MONEY"
-    log.info(f"Starting. Mode: {mode}. Environment: {config.ENVIRONMENT}. "
+    log.info(f"Starting. Mode: {mode}. Broker: {config.BROKER}. "
+             f"Environment: {config.ENVIRONMENT}. "
              f"Symbol: {config.SYMBOL}. Strategy: {config.STRATEGY}.")
     if not config.DRY_RUN:
         log.warning("LIVE MODE: real money is at risk.")
@@ -127,7 +140,7 @@ def main():
     while True:
         try:
             if qt is None:
-                qt = Questrade()  # token is cached; refreshes only near expiry
+                qt = make_client()
             acct = qt.account_id()
             sym_id = qt.symbol_id(config.SYMBOL)
             state = reset_daily(state)

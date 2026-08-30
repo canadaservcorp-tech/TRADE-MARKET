@@ -2,3 +2,4 @@ requests==2.32.3
 pandas==2.2.2
 python-dotenv==1.0.1
 yfinance==0.2.66
+ib_async==2.1.0
