@@ -30,10 +30,10 @@ DELAYED_DATA = 3  # market data type: delayed (no subscription required)
 
 
 class IBKR:
-    def __init__(self):
+    def __init__(self, client_id=None):
         self.ib = IB()
         self.ib.connect(config.IBKR_HOST, config.IBKR_PORT,
-                        clientId=config.IBKR_CLIENT_ID, timeout=20)
+                        clientId=client_id or config.IBKR_CLIENT_ID, timeout=20)
         self.ib.reqMarketDataType(DELAYED_DATA)
         accounts = self.ib.managedAccounts()
         kind = "PAPER" if accounts and accounts[0].startswith("D") else "LIVE"
@@ -63,10 +63,12 @@ class IBKR:
         return float(price)
 
     def daily_closes(self, contract, count):
+        days = count * 2 + 10
+        duration = f"{days} D" if days <= 365 else f"{-(-days // 365)} Y"
         bars = self.ib.reqHistoricalData(
             contract,
             endDateTime="",
-            durationStr=f"{count * 2 + 10} D",
+            durationStr=duration,
             barSizeSetting="1 day",
             whatToShow="TRADES",
             useRTH=True,
@@ -80,14 +82,14 @@ class IBKR:
                 return float(p.position), float(p.avgCost)
         return 0.0, 0.0
 
-    def market_open_now(self, market_name="NASDAQ"):
-        """True if the configured symbol is in regular (liquid) trading hours.
+    def market_open_now(self, market_name="NASDAQ", symbol=None):
+        """True if the symbol (default config.SYMBOL) is in regular (liquid) hours.
 
         Uses the contract's own liquidHours from IBKR, so holidays and
         half-days are respected. Fails closed: any error means "closed".
         """
         try:
-            contract = self.symbol_id(config.SYMBOL)
+            contract = self.symbol_id(symbol or config.SYMBOL)
             details = self.ib.reqContractDetails(contract)[0]
             tz = ZoneInfo(details.timeZoneId)
             now = dt.datetime.now(tz)

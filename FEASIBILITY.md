@@ -106,6 +106,51 @@ claims need >= 30 trades or >= 1 full market cycle.
 4. **Realistic expectations**: a good retail trend-following system targets
    roughly 5-15%/year with 10-25% drawdowns. On $500 that is $25-75/year.
 
+## 4b. Second bot: monthly ETF momentum rotation
+
+Rationale (replaces the earlier single-ETF MA idea): instead of timing one
+instrument with a crossover that fires ~2x/year, rank a basket of ETFs
+every month and hold the strongest. Cross-sectional ranking gives
+~7-15 trades/year (a judgeable sample), spreads risk across asset classes,
+and the positive-momentum filter parks the sleeve in cash in broad
+downturns. It does **not** manufacture an edge; its documented benefit is
+mostly *drawdown reduction*, not higher return. Martingale (doubling after
+a loss) is still not what this does.
+
+Universe (cheap share classes so whole shares fit $250): SCHX (US large),
+SCHG (US growth), SCHA (US small), SCHF (intl developed), SCHE (emerging),
+SPTL (long Treasuries), IAU (gold), XLE (energy), SCHH (REITs). SPY/QQQ/GLD
+themselves are $400-$770/share and unaffordable at this size.
+
+`rotation_backtest.py`: month-end ranking by average 3/6/12-month return,
+hold top N with positive score, $1/order, whole shares, 2012-2026 (SCHH
+limits the start), 60/40 walk-forward. Benchmark SCHX buy-and-hold.
+
+| window | SCHX B&H | $250 top-1 | $250 top-3 | $2,000 top-1 | $2,000 top-3 |
+|---|---|---|---|---|---|
+| full 2012-26 | +14.7%/yr, DD -25% | +6.8%/yr, DD -27% | +6.6%/yr, DD -24% | +11.1%/yr, DD -19% | +11.7%/yr, DD -15% |
+| in-sample 2012-20 | +12.8%/yr | -1.5%/yr | +0.4%/yr | +2.9%/yr | +6.2%/yr |
+| out-of-sample 2020-26 | +17.1%/yr, DD -25% | +20.9%/yr, DD -19% | +13.4%/yr, DD -9% | +23.1%/yr, DD -19% | +18.6%/yr, DD -9% |
+
+Reading: it **beat buy-and-hold out-of-sample** (2020-26) at every size with
+lower drawdown, but **lagged badly in the 2012-20 US-only bull run** and
+so trails over the full 14 years. Fees are the deciding factor at $250:
+127-221 orders cost 50-88% of the sleeve over the period; at $2,000 the
+same orders cost 6-11%. Conclusion: run it at $250 as a *plumbing test
+only* (top-1 to minimise fee drag); it becomes a real strategy test at
+about $2,000, where top-2/3 gives the best drawdown profile.
+
+How it runs: `bot2.py` is a separate process (own `bot2.log`,
+`bot2_state.json`, kill switch `KILL_SWITCH_BOT2`, IBKR client id 2, so it
+runs alongside `bot.py`). On the first trading day of each month it pulls a
+year of closes for the universe, ranks, sells drop-outs and buys the new
+top names with equal dollars; on other days it only logs. `BOT2_ENABLED`
+is **False** by default; flip it only after a `DRY_RUN = True` run has
+shown sensible scores and orders in `bot2.log`. Schedule with
+`schedule_bot2.bat` (weekdays 10:05). Pass/fail for this sleeve: after
+6 months / 12+ orders, live fills must match the month-end backtest within
+fees + 0.5%, and equity must stay above 80% of the sleeve.
+
 ## 5. Effort estimate
 - Phase 0/1 are calendar time, not work: ~5 minutes/week of log review.
 - Strategy research (sec. 4.1): 1-2 Devin sessions to implement and backtest
