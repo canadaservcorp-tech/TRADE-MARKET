@@ -80,3 +80,26 @@ def get_signal_fn():
             f"config.STRATEGY must be one of {sorted(STRATEGIES)}, "
             f"got {config.STRATEGY!r}"
         )
+
+
+def momentum_score(closes, lookbacks=(3, 6, 12), days_per_month=21):
+    """Average of the trailing 3/6/12-month returns (cross-sectional
+    momentum). Returns None if there is not enough history."""
+    need = max(lookbacks) * days_per_month + 1
+    if len(closes) < need:
+        return None
+    last = closes[-1]
+    return sum(last / closes[-1 - k * days_per_month] - 1 for k in lookbacks) / len(lookbacks)
+
+
+def rotation_targets(closes_by_symbol, top_n, lookbacks=(3, 6, 12), days_per_month=21):
+    """Rank symbols by momentum_score; return the top_n with a positive
+    score (an empty list means: sit in cash)."""
+    scores = {}
+    for sym, closes in closes_by_symbol.items():
+        sc = momentum_score(closes, lookbacks, days_per_month)
+        if sc is None:
+            log.warning("Not enough history for %s; excluded this month.", sym)
+        elif sc > 0:
+            scores[sym] = sc
+    return sorted(scores, key=scores.get, reverse=True)[:top_n]

@@ -106,44 +106,50 @@ claims need >= 30 trades or >= 1 full market cycle.
 4. **Realistic expectations**: a good retail trend-following system targets
    roughly 5-15%/year with 10-25% drawdowns. On $500 that is $25-75/year.
 
-## 4b. Second bot: Ether ETF (ETHA) — the "double game"
+## 4b. Second bot: monthly ETF momentum rotation
 
-Rationale: a second bot on an asset only loosely correlated with a US stock
-diversifies the equity curve. It does **not** create an edge — two
-zero-edge bots are still zero edge. Doubling size after a loss (martingale)
-is *not* what this does and is not recommended.
+Rationale (replaces the earlier single-ETF MA idea): instead of timing one
+instrument with a crossover that fires ~2x/year, rank a basket of ETFs
+every month and hold the strongest. Cross-sectional ranking gives
+~7-15 trades/year (a judgeable sample), spreads risk across asset classes,
+and the positive-momentum filter parks the sleeve in cash in broad
+downturns. It does **not** manufacture an edge; its documented benefit is
+mostly *drawdown reduction*, not higher return. Martingale (doubling after
+a loss) is still not what this does.
 
-IBKR does not offer direct crypto to Canadian accounts, so bot 2 trades
-**ETHA** (iShares spot-Ether ETF, ~$20/share; alternative IBIT for
-Bitcoin). Same price behaviour as ETH, regular US market hours, whole
-shares, $1 commission — i.e. the existing stock code path.
+Universe (cheap share classes so whole shares fit $250): SCHX (US large),
+SCHG (US growth), SCHA (US small), SCHF (intl developed), SCHE (emerging),
+SPTL (long Treasuries), IAU (gold), XLE (energy), SCHH (REITs). SPY/QQQ/GLD
+themselves are $400-$770/share and unaffordable at this size.
 
-`crypto_backtest.py`: $250 ticket, BTC-USD & ETH-USD (5y, as the long
-history proxy) plus IBIT & ETHA (only ~2y of data, too short to trust
-alone), MA 10/30, 20/50, 50/200, RSI-14, Donchian 20/55, 8% stop / 20%
-target, 70/30 walk-forward.
+`rotation_backtest.py`: month-end ranking by average 3/6/12-month return,
+hold top N with positive score, $1/order, whole shares, 2012-2026 (SCHH
+limits the start), 60/40 walk-forward. Benchmark SCHX buy-and-hold.
 
-| bars | combos beating B&H OOS | positive OOS | median OOS ret | median OOS B&H |
-|---|---|---|---|---|
-| ETH/BTC daily, 5y | 2 / 12 | 5 / 12 | -4.5% | +20.5% |
-| ETH/BTC 4-hour, 2y | 1 / 12 | 5 / 12 | -3.1% | +29.7% |
+| window | SCHX B&H | $250 top-1 | $250 top-3 | $2,000 top-1 | $2,000 top-3 |
+|---|---|---|---|---|---|
+| full 2012-26 | +14.7%/yr, DD -25% | +6.8%/yr, DD -27% | +6.6%/yr, DD -24% | +11.1%/yr, DD -19% | +11.7%/yr, DD -15% |
+| in-sample 2012-20 | +12.8%/yr | -1.5%/yr | +0.4%/yr | +2.9%/yr | +6.2%/yr |
+| out-of-sample 2020-26 | +17.1%/yr, DD -25% | +20.9%/yr, DD -19% | +13.4%/yr, DD -9% | +23.1%/yr, DD -19% | +18.6%/yr, DD -9% |
 
-Only **ETH MA 20/50 daily** beat buy-and-hold in *both* halves
-(in-sample +6% vs -52% B&H; out-of-sample +50% vs +41% B&H, 36 trades,
--23% max drawdown). Fast settings (MA 10/30, Donchian 20) were destroyed
-by fees and whipsaws (-20% to -50% OOS). That is the setting in
-`config.py` (`BOT2_*`), with the same caveat as the stock bot: one
-surviving combo out of 24 is weak evidence and may be luck. On ETHA's own
-short history MA 20/50 was +10% OOS vs +1% B&H over 9 trades — consistent,
-but far too few trades to mean anything.
+Reading: it **beat buy-and-hold out-of-sample** (2020-26) at every size with
+lower drawdown, but **lagged badly in the 2012-20 US-only bull run** and
+so trails over the full 14 years. Fees are the deciding factor at $250:
+127-221 orders cost 50-88% of the sleeve over the period; at $2,000 the
+same orders cost 6-11%. Conclusion: run it at $250 as a *plumbing test
+only* (top-1 to minimise fee drag); it becomes a real strategy test at
+about $2,000, where top-2/3 gives the best drawdown profile.
 
 How it runs: `bot2.py` is a separate process (own `bot2.log`,
 `bot2_state.json`, kill switch `KILL_SWITCH_BOT2`, IBKR client id 2, so it
-runs alongside `bot.py`). `BOT2_ENABLED` is **False** by default; flip it
-only after a `DRY_RUN = True` paper run. Schedule with `schedule_bot2.bat`
-(weekdays 10:05). Apply the phases and pass/fail criteria of section 3
-to it separately, with a wider floor: stop if the bot-2 sleeve drops below
-70% of its ticket (an 8% stop is a normal day for ETH).
+runs alongside `bot.py`). On the first trading day of each month it pulls a
+year of closes for the universe, ranks, sells drop-outs and buys the new
+top names with equal dollars; on other days it only logs. `BOT2_ENABLED`
+is **False** by default; flip it only after a `DRY_RUN = True` run has
+shown sensible scores and orders in `bot2.log`. Schedule with
+`schedule_bot2.bat` (weekdays 10:05). Pass/fail for this sleeve: after
+6 months / 12+ orders, live fills must match the month-end backtest within
+fees + 0.5%, and equity must stay above 80% of the sleeve.
 
 ## 5. Effort estimate
 - Phase 0/1 are calendar time, not work: ~5 minutes/week of log review.

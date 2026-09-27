@@ -63,10 +63,12 @@ class IBKR:
         return float(price)
 
     def daily_closes(self, contract, count):
+        days = count * 2 + 10
+        duration = f"{days} D" if days <= 365 else f"{-(-days // 365)} Y"
         bars = self.ib.reqHistoricalData(
             contract,
             endDateTime="",
-            durationStr=f"{count * 2 + 10} D",
+            durationStr=duration,
             barSizeSetting="1 day",
             whatToShow="TRADES",
             useRTH=True,

@@ -59,20 +59,18 @@ STOP_LOSS_PCT = 0.05         # sell if down 5% from entry
 TAKE_PROFIT_PCT = 0.10       # sell if up 10%
 MAX_TRADES_PER_DAY = 3       # circuit breaker
 
-# --- Bot 2 (bot2.py — separate process, separate state/log/kill switch) ---
-# Second position so the account isn't riding F alone. Default: ETHA, the
-# spot-Ether ETF (~$20/share) — IBKR does not offer direct crypto to
-# Canadian accounts, so the ETF is the tradable proxy. MA 20/50 was the
-# only setting that beat buy-and-hold in both backtest halves on 5y of
-# ETH-USD data (crypto_backtest.py); still thin evidence — see FEASIBILITY.md.
+# --- Bot 2 (bot2.py — monthly ETF momentum rotation; own state/log/kill switch) ---
+# Each month hold the BOT2_TOP_N ETFs with the best average 3/6/12-month
+# return (only if positive; otherwise cash). Cross-sectional ranking of many
+# assets is structurally sturdier than timing one stock, and it produces
+# ~7-15 trades/year — enough to judge. rotation_backtest.py (2006-2026,
+# fee-aware): at $2,000 it beat SPY out-of-sample with ~half the drawdown;
+# at $250 the $1 commissions eat 20%+ and it trails SPY. Run it at $250
+# only as a plumbing test; it needs ~$2,000 to be a real strategy test.
 BOT2_ENABLED = False             # master switch: False = bot2.py exits immediately
-BOT2_SYMBOL = "ETHA"             # or "IBIT" (spot-Bitcoin ETF, ~$48/share)
-BOT2_SHORT_WINDOW = 20
-BOT2_LONG_WINDOW = 50
-BOT2_POSITION_DOLLARS = 250      # whole shares only
-BOT2_STOP_LOSS_PCT = 0.08        # ETH moves ~3x a stock: wider stop / target
-BOT2_TAKE_PROFIT_PCT = 0.20
-BOT2_MAX_TRADES_PER_DAY = 1
+BOT2_UNIVERSE = ["SPY", "QQQ", "IWM", "EFA", "EEM", "TLT", "GLD", "XLE", "VNQ"]
+BOT2_TOP_N = 1                   # 1 at $250 (least fee drag); 2-3 once the sleeve is $2,000+
+BOT2_CAPITAL_DOLLARS = 250       # total sleeve for bot 2, split equally across BOT2_TOP_N
 BOT2_CLIENT_ID = 2               # must differ from IBKR_CLIENT_ID so both bots can connect
 BOT2_STATE_FILE = "bot2_state.json"
 BOT2_KILL_SWITCH_FILE = "KILL_SWITCH_BOT2"   # KILL_SWITCH (bot.py's) also stops it

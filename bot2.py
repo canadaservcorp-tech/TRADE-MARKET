@@ -1,9 +1,13 @@
 """
-Bot 2 — second, independent bot trading a different symbol (default: ETHA,
-the spot-Ether ETF) with its own MA windows and risk caps, so the account
-is not riding a single position. Separate process, log, state file and
-kill switch; shares config.DRY_RUN / IBKR host+port / IBKR_ALLOW_LIVE_ORDERS
-with bot.py. IBKR only (the Questrade client is not wired in here).
+Bot 2 — monthly ETF momentum rotation (see rotation_backtest.py).
+
+Once a month (first run of a new calendar month), rank config.BOT2_UNIVERSE
+by the average of trailing 3/6/12-month returns and hold the top
+config.BOT2_TOP_N with a positive score, equal dollars each; sell whatever
+dropped out. If nothing has positive momentum the sleeve sits in cash.
+Between rebalances the bot only logs. Separate process, log, state file and
+kill switch from bot.py; shares DRY_RUN / IBKR host+port / live-order flag.
+IBKR only.
 
 Run:  python bot2.py           (loop every config.LOOP_SECONDS)
       python bot2.py --once    (one pass, then exit — scheduled task)
@@ -20,7 +24,7 @@ from datetime import datetime
 import config
 from questrade import OrderError
 from ibkr import IBKR
-from strategies import ma_cross_signal
+from strategies import rotation_targets, momentum_score
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,16 +33,18 @@ logging.basicConfig(
 )
 log = logging.getLogger("bot2")
 
+HISTORY_DAYS = 12 * 21 + 5  # enough daily closes for the 12-month lookback
+
 
 def load_state():
     try:
         with open(config.BOT2_STATE_FILE) as f:
             state = json.load(f)
     except FileNotFoundError:
-        state = {"trades_today": 0, "date": str(datetime.now().date())}
-    state.setdefault("paper_cash", float(config.BOT2_POSITION_DOLLARS))
-    state.setdefault("paper_shares", 0)
-    state.setdefault("paper_entry", 0.0)
+        state = {}
+    state.setdefault("last_rebalance_month", "")
+    state.setdefault("paper_cash", float(config.BOT2_CAPITAL_DOLLARS))
+    state.setdefault("paper_positions", {})   # symbol -> shares
     return state
 
 
@@ -47,46 +53,80 @@ def save_state(s):
         json.dump(s, f)
 
 
-def reset_daily(s):
-    today = str(datetime.now().date())
-    if s["date"] != today:
-        s["date"], s["trades_today"] = today, 0
-    return s
-
-
 def kill_switch_active():
     return (os.path.exists(config.BOT2_KILL_SWITCH_FILE)
             or os.path.exists(config.KILL_SWITCH_FILE)
             or os.getenv("KILL_SWITCH") == "1")
 
 
-def act(qt, acct, sym_id, side, qty, price, state, reason="strategy signal"):
+def act(qt, acct, sym, contract, side, qty, price, state, reason):
     """All trades pass through here — respects DRY_RUN. Returns True on success.
     Never retried: a blind retry could double-fire."""
     qty = int(qty)
-    sym = config.BOT2_SYMBOL
+    if qty < 1:
+        return False
     if config.DRY_RUN:
+        pos = state["paper_positions"]
         if side == "buy":
             state["paper_cash"] -= qty * price
-            state["paper_shares"], state["paper_entry"] = qty, price
-            pnl_txt = ""
+            pos[sym] = pos.get(sym, 0) + qty
         else:
-            pnl = (price - state["paper_entry"]) * qty
-            pnl_txt = f", P&L on this trade: ${pnl:+.2f}"
             state["paper_cash"] += qty * price
-            state["paper_shares"], state["paper_entry"] = 0, 0.0
-        balance = state["paper_cash"] + state["paper_shares"] * price
-        log.info(f"[DRY_RUN] Would {side} {qty} {sym} @ ${price:.2f} ({reason}) "
-                 f"— NO order sent. Paper balance: ${balance:.2f}{pnl_txt}")
+            pos.pop(sym, None)
+        log.info(f"[DRY_RUN] Would {side} {qty} {sym} @ ${price:.2f} ({reason}) — NO order sent.")
         return True
     log.info(f"[LIVE] Sending {side} order for {qty} {sym} ({reason}).")
     try:
-        result = qt.place_order(acct, sym_id, qty, side.capitalize())
+        result = qt.place_order(acct, contract, qty, side.capitalize())
     except OrderError as e:
         log.error(f"Order REJECTED ({e}). Full response: {e.response_body}. Not retrying.")
         return False
     log.info(f"Order accepted: {result}")
     return True
+
+
+def holdings(qt, acct, contracts, state):
+    """symbol -> shares for the universe (paper positions in DRY_RUN)."""
+    if config.DRY_RUN:
+        return {s: q for s, q in state["paper_positions"].items() if q > 0}
+    held = {}
+    for sym, c in contracts.items():
+        q, _ = qt.position_qty(acct, c)
+        if q > 0:
+            held[sym] = int(q)
+    return held
+
+
+def rebalance(qt, acct, contracts, prices, closes, state):
+    held = holdings(qt, acct, contracts, state)
+    targets = rotation_targets(closes, config.BOT2_TOP_N)
+    scores = {s: momentum_score(c) for s, c in closes.items()}
+    log.info("Momentum scores: " + ", ".join(
+        f"{s}={sc:+.1%}" for s, sc in sorted(scores.items(), key=lambda kv: -(kv[1] or -9))
+        if sc is not None))
+    log.info(f"Target: {targets or 'CASH'}  |  currently held: {held or 'nothing'}")
+
+    for sym in [s for s in held if s not in targets]:
+        act(qt, acct, sym, contracts[sym], "sell", held[sym], prices[sym], state,
+            reason="dropped out of top ranks")
+
+    new = [s for s in targets if s not in held]
+    if new:
+        if config.DRY_RUN:
+            cash = state["paper_cash"]
+        else:
+            # Live: spend the sleeve minus what the kept positions are worth.
+            kept = sum(held[s] * prices[s] for s in held if s in targets)
+            cash = config.BOT2_CAPITAL_DOLLARS - kept
+        for j, sym in enumerate(new):
+            slice_ = cash / (len(new) - j)
+            qty = int(slice_ // prices[sym])
+            if qty >= 1:
+                if act(qt, acct, sym, contracts[sym], "buy", qty, prices[sym], state,
+                       reason=f"rank {targets.index(sym) + 1}"):
+                    cash -= qty * prices[sym]
+            else:
+                log.info(f"Can't afford 1 share of {sym} at ${prices[sym]:.2f} with ${slice_:.2f}. Skipping.")
 
 
 def main(once=False):
@@ -97,10 +137,8 @@ def main(once=False):
         log.error("bot2 supports BROKER = 'ibkr' only. Exiting.")
         return
     mode = "DRY_RUN (no real orders)" if config.DRY_RUN else "LIVE — REAL MONEY"
-    log.info(f"Starting bot2. Mode: {mode}. {config.BOT2_SYMBOL} "
-             f"MA{config.BOT2_SHORT_WINDOW}/{config.BOT2_LONG_WINDOW}, "
-             f"${config.BOT2_POSITION_DOLLARS} cap, stop {config.BOT2_STOP_LOSS_PCT:.0%}, "
-             f"target {config.BOT2_TAKE_PROFIT_PCT:.0%}.")
+    log.info(f"Starting bot2 (momentum rotation). Mode: {mode}. Universe {config.BOT2_UNIVERSE}, "
+             f"top {config.BOT2_TOP_N}, ${config.BOT2_CAPITAL_DOLLARS} sleeve.")
     if not config.DRY_RUN:
         log.warning("LIVE MODE: real money is at risk.")
 
@@ -112,74 +150,38 @@ def main(once=False):
             if qt is None:
                 qt = IBKR(client_id=config.BOT2_CLIENT_ID)
             acct = qt.account_id()
-            sym_id = qt.symbol_id(config.BOT2_SYMBOL)
-            state = reset_daily(state)
+            contracts = {s: qt.symbol_id(s) for s in config.BOT2_UNIVERSE}
 
-            if config.DRY_RUN:
-                qty_held, entry = state["paper_shares"], state["paper_entry"]
-            else:
-                qty_held, entry = qt.position_qty(acct, sym_id)
-
-            # 0. Kill switch — flatten and stop
+            # 0. Kill switch — flatten everything and stop
             if kill_switch_active():
                 log.warning("KILL SWITCH detected. Flattening and stopping.")
-                if qty_held > 0:
-                    act(qt, acct, sym_id, "sell", qty_held, qt.last_price(sym_id),
-                        state, reason="kill switch")
+                for sym, q in holdings(qt, acct, contracts, state).items():
+                    act(qt, acct, sym, contracts[sym], "sell", q,
+                        qt.last_price(contracts[sym]), state, reason="kill switch")
                 save_state(state)
                 return
 
             # 0.5 Market-hours guard
-            if not qt.market_open_now(symbol=config.BOT2_SYMBOL):
+            if not qt.market_open_now(symbol=config.BOT2_UNIVERSE[0]):
                 log.info("Market closed. No orders will be attempted.")
                 if once:
                     return
                 time.sleep(config.LOOP_SECONDS)
                 continue
 
-            price = qt.last_price(sym_id)
-
-            # 1. Risk checks first
-            acted = False
-            if qty_held > 0 and entry > 0:
-                change = (price - entry) / entry
-                if change <= -config.BOT2_STOP_LOSS_PCT:
-                    log.info(f"STOP-LOSS {change:.1%}. Selling.")
-                    act(qt, acct, sym_id, "sell", qty_held, price, state,
-                        reason=f"stop-loss ({change:.1%})")
-                    acted = True
-                elif change >= config.BOT2_TAKE_PROFIT_PCT:
-                    log.info(f"TAKE-PROFIT {change:.1%}. Selling.")
-                    act(qt, acct, sym_id, "sell", qty_held, price, state,
-                        reason=f"take-profit ({change:.1%})")
-                    acted = True
-
-            # 2. Strategy signal
-            if not acted:
-                closes = qt.daily_closes(sym_id, config.BOT2_LONG_WINDOW)
-                sig = ma_cross_signal(closes, config.BOT2_SHORT_WINDOW,
-                                      config.BOT2_LONG_WINDOW)
-                pos_txt = "flat" if qty_held == 0 else (
-                    f"{int(qty_held)} sh @ ${entry:.2f} "
-                    f"(unrealized ${(price - entry) * qty_held:+.2f})")
-                log.info(f"{config.BOT2_SYMBOL} price=${price:.2f} signal={sig} position: {pos_txt}")
-
-                if sig == "buy" and qty_held == 0:
-                    if state["trades_today"] < config.BOT2_MAX_TRADES_PER_DAY:
-                        qty = int(config.BOT2_POSITION_DOLLARS // price)
-                        if qty >= 1:
-                            if act(qt, acct, sym_id, "buy", qty, price, state):
-                                state["trades_today"] += 1
-                        else:
-                            log.info(f"Can't afford 1 share at ${price:.2f} with a "
-                                     f"${config.BOT2_POSITION_DOLLARS} cap. Skipping.")
-                    else:
-                        log.info("Daily trade cap reached.")
-                elif sig == "sell" and qty_held > 0:
-                    if act(qt, acct, sym_id, "sell", qty_held, price, state):
-                        state["trades_today"] += 1
-                else:
-                    log.info(f"No action. Signal={sig}, holding={qty_held}.")
+            month = datetime.now().strftime("%Y-%m")
+            if state["last_rebalance_month"] == month:
+                held = holdings(qt, acct, contracts, state)
+                log.info(f"Already rebalanced for {month}. Holding: {held or 'cash'}. No action.")
+            else:
+                prices = {s: qt.last_price(c) for s, c in contracts.items()}
+                closes = {s: qt.daily_closes(c, HISTORY_DAYS) for s, c in contracts.items()}
+                rebalance(qt, acct, contracts, prices, closes, state)
+                state["last_rebalance_month"] = month
+                if config.DRY_RUN:
+                    value = state["paper_cash"] + sum(
+                        q * prices[s] for s, q in state["paper_positions"].items())
+                    log.info(f"Paper sleeve value: ${value:.2f}")
 
             save_state(state)
 
