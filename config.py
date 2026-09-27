@@ -59,6 +59,24 @@ STOP_LOSS_PCT = 0.05         # sell if down 5% from entry
 TAKE_PROFIT_PCT = 0.10       # sell if up 10%
 MAX_TRADES_PER_DAY = 3       # circuit breaker
 
+# --- Crypto bot (crypto_bot.py — separate process, separate state) ---
+# Trades a spot crypto pair on IBKR's PAXOS venue, 24/7, MA crossover on
+# daily bars. Chosen from crypto_backtest.py: ETH MA20/50 was the only
+# combo that beat buy-and-hold both in- and out-of-sample (still thin
+# evidence — see FEASIBILITY.md). Not all IBKR accounts have crypto
+# trading permission (Account Settings -> Trading Permissions -> Crypto).
+CRYPTO_ENABLED = False           # master switch: False = crypto_bot.py exits immediately
+CRYPTO_SYMBOL = "ETH"            # "BTC" or "ETH"
+CRYPTO_SHORT_WINDOW = 20
+CRYPTO_LONG_WINDOW = 50
+CRYPTO_POSITION_DOLLARS = 250    # fractional qty is allowed, so this is the whole ticket
+CRYPTO_STOP_LOSS_PCT = 0.08      # crypto moves ~3x stocks: wider stop / target
+CRYPTO_TAKE_PROFIT_PCT = 0.20
+CRYPTO_MAX_TRADES_PER_DAY = 1
+CRYPTO_CLIENT_ID = 2             # must differ from IBKR_CLIENT_ID so both bots can connect
+CRYPTO_STATE_FILE = "crypto_state.json"
+CRYPTO_KILL_SWITCH_FILE = "KILL_SWITCH_CRYPTO"   # KILL_SWITCH (stock bot's) also stops it
+
 # --- Kill switch ---
 # If this file exists (or env var KILL_SWITCH=1), the bot sells any open
 # position (respecting DRY_RUN) and exits. Create it with:  touch KILL_SWITCH
