@@ -32,7 +32,7 @@ ENVIRONMENT = "live"
 STRATEGY = "ma_cross"
 
 # ma_cross settings
-SYMBOL = "AAPL"        # one symbol to start
+SYMBOL = "F"           # ~$11/share: fits ~3 shares under the $40 cap (AAPL would never fill)
 SHORT_WINDOW = 20      # fast MA (days)
 LONG_WINDOW = 50       # slow MA (days)
 
