@@ -28,8 +28,22 @@ IBKR_ALLOW_LIVE_ORDERS = True
 # Generate the practice refresh token from the practice API centre.
 ENVIRONMENT = "live"
 
-# --- Strategy: "ma_cross" (moving-average crossover) or "rsi" ---
-STRATEGY = "ma_cross"
+# --- Strategy: "rotation" (monthly ETF momentum rotation), "ma_cross"
+# (moving-average crossover on SYMBOL) or "rsi" (on SYMBOL) ---
+STRATEGY = "rotation"
+
+# rotation settings (only used when STRATEGY = "rotation"; engine: rotation.py)
+# Each month hold the ROTATION_TOP_N ETFs with the best average 3/6/12-month
+# return (only if positive; otherwise cash), spending up to
+# MAX_POSITION_DOLLARS in total. Cheap share classes (all < $100) so whole
+# shares fit a small sleeve: US large / US growth / US small / intl developed /
+# emerging / long Treasuries / gold / energy / REITs. rotation_backtest.py
+# (2012-2026, $1/order): beat buy-and-hold out-of-sample with about half the
+# drawdown, lagged it in the 2012-20 US bull run; fees make it a plumbing
+# test below ~$2,000. NOTE: at MAX_POSITION_DOLLARS = 40 it cannot afford a
+# single share of most of these and will only log "Can't afford".
+ROTATION_UNIVERSE = ["SCHX", "SCHG", "SCHA", "SCHF", "SCHE", "SPTL", "IAU", "XLE", "SCHH"]
+ROTATION_TOP_N = 1     # 1 while the sleeve is small (least fee drag); 2-3 from ~$2,000
 
 # ma_cross settings
 SYMBOL = "F"           # ~$11/share: fits ~3 shares under the $40 cap (AAPL would never fill)
@@ -59,16 +73,17 @@ STOP_LOSS_PCT = 0.05         # sell if down 5% from entry
 TAKE_PROFIT_PCT = 0.10       # sell if up 10%
 MAX_TRADES_PER_DAY = 3       # circuit breaker
 
-# --- Bot 2 (bot2.py — monthly ETF momentum rotation; own state/log/kill switch) ---
-# Each month hold the BOT2_TOP_N ETFs with the best average 3/6/12-month
-# return (only if positive; otherwise cash). Cross-sectional ranking of many
-# assets is structurally sturdier than timing one stock, and it produces
-# ~7-15 trades/year — enough to judge. rotation_backtest.py (2006-2026,
-# fee-aware): at $2,000 it beat SPY out-of-sample with ~half the drawdown;
-# at $250 the $1 commissions eat 20%+ and it trails SPY. Run it at $250
-# only as a plumbing test; it needs ~$2,000 to be a real strategy test.
+# --- Bot 2 (bot2.py — a second rotation sleeve; own state/log/kill switch) ---
+# Same engine as STRATEGY = "rotation" above. Only useful with a universe
+# DISJOINT from ROTATION_UNIVERSE (each bot reads the account's real shares
+# for its tickers, so a shared ticker would be double-counted; bot2.py refuses
+# to start on overlap while bot.py is on "rotation"). US sector rotation
+# (XLB/XLF/...) was tested as a candidate and failed (python
+# rotation_backtest.py sectors): it trails SPY in every window. With bot.py
+# already rotating, the simplest plan is to leave this off and put the
+# capital into MAX_POSITION_DOLLARS instead.
 BOT2_ENABLED = False             # master switch: False = bot2.py exits immediately
-BOT2_UNIVERSE = ["SPY", "QQQ", "IWM", "EFA", "EEM", "TLT", "GLD", "XLE", "VNQ"]
+BOT2_UNIVERSE = list(ROTATION_UNIVERSE)   # placeholder — replace with a disjoint list before enabling
 BOT2_TOP_N = 1                   # 1 at $250 (least fee drag); 2-3 once the sleeve is $2,000+
 BOT2_CAPITAL_DOLLARS = 250       # total sleeve for bot 2, split equally across BOT2_TOP_N
 BOT2_CLIENT_ID = 2               # must differ from IBKR_CLIENT_ID so both bots can connect
