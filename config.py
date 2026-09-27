@@ -33,8 +33,8 @@ STRATEGY = "ma_cross"
 
 # ma_cross settings
 SYMBOL = "F"           # ~$11/share: fits ~3 shares under the $40 cap (AAPL would never fill)
-SHORT_WINDOW = 20      # fast MA (days)
-LONG_WINDOW = 50       # slow MA (days)
+SHORT_WINDOW = 50      # fast MA (days)
+LONG_WINDOW = 200      # slow MA (days)
 
 # rsi settings (only used when STRATEGY = "rsi")
 RSI_PERIOD = 14
