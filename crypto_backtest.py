@@ -1,7 +1,9 @@
-"""Fee-aware crypto feasibility backtest: $250 position, IBKR/Paxos fees, BTC & ETH.
+"""Fee-aware crypto feasibility backtest for bot2.py: $250 position, BTC/ETH + their ETFs.
 
-IBKR crypto commission: 0.18% of trade value, min $1.75 per order (tiers ignored).
-Fractional quantities allowed, so the whole $250 is deployed each entry.
+Fee model is IBKR direct crypto (0.18% of value, min $1.75, fractional qty) —
+slightly *harsher* than the $1/side whole-share ETF path bot2 actually uses,
+so ETF results are conservative. BTC-USD/ETH-USD give 5y of history; the
+IBIT/ETHA ETFs only have ~2y.
 Run: python crypto_backtest.py
 """
 import warnings
@@ -13,7 +15,7 @@ from strategies import ma_cross_signal, rsi
 
 POS = 250.0
 FEE_PCT, FEE_MIN = 0.0018, 1.75
-SYMS = ["BTC-USD", "ETH-USD"]
+SYMS = ["BTC-USD", "ETH-USD", "IBIT", "ETHA"]  # ETFs only have ~2y history
 GRID = [(10, 30), (20, 50), (50, 200)]
 STOP, TP = 0.08, 0.20
 

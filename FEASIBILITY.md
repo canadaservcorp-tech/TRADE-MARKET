@@ -106,38 +106,44 @@ claims need >= 30 trades or >= 1 full market cycle.
 4. **Realistic expectations**: a good retail trend-following system targets
    roughly 5-15%/year with 10-25% drawdowns. On $500 that is $25-75/year.
 
-## 4b. Second bot: crypto (ETH on IBKR/PAXOS) — the "double game"
+## 4b. Second bot: Ether ETF (ETHA) — the "double game"
 
-Rationale: a second bot on an asset that is only loosely correlated with a
-US stock diversifies the equity curve. It does **not** create an edge —
-two zero-edge bots are still zero edge. Doubling size after a loss
-(martingale) is *not* what this does and is not recommended.
+Rationale: a second bot on an asset only loosely correlated with a US stock
+diversifies the equity curve. It does **not** create an edge — two
+zero-edge bots are still zero edge. Doubling size after a loss (martingale)
+is *not* what this does and is not recommended.
 
-`crypto_backtest.py`: $250 ticket, IBKR crypto fee (0.18%, min $1.75),
-fractional size, 8% stop / 20% target, BTC & ETH, MA 10/30, 20/50, 50/200,
-RSI-14, Donchian 20/55, 70/30 walk-forward.
+IBKR does not offer direct crypto to Canadian accounts, so bot 2 trades
+**ETHA** (iShares spot-Ether ETF, ~$20/share; alternative IBIT for
+Bitcoin). Same price behaviour as ETH, regular US market hours, whole
+shares, $1 commission — i.e. the existing stock code path.
+
+`crypto_backtest.py`: $250 ticket, BTC-USD & ETH-USD (5y, as the long
+history proxy) plus IBIT & ETHA (only ~2y of data, too short to trust
+alone), MA 10/30, 20/50, 50/200, RSI-14, Donchian 20/55, 8% stop / 20%
+target, 70/30 walk-forward.
 
 | bars | combos beating B&H OOS | positive OOS | median OOS ret | median OOS B&H |
 |---|---|---|---|---|
-| daily, 5y | 2 / 12 | 5 / 12 | -4.5% | +20.5% |
-| 4-hour, 2y | 1 / 12 | 5 / 12 | -3.1% | +29.7% |
+| ETH/BTC daily, 5y | 2 / 12 | 5 / 12 | -4.5% | +20.5% |
+| ETH/BTC 4-hour, 2y | 1 / 12 | 5 / 12 | -3.1% | +29.7% |
 
 Only **ETH MA 20/50 daily** beat buy-and-hold in *both* halves
 (in-sample +6% vs -52% B&H; out-of-sample +50% vs +41% B&H, 36 trades,
--23% max drawdown). Faster settings (MA 10/30, Donchian 20) were destroyed
+-23% max drawdown). Fast settings (MA 10/30, Donchian 20) were destroyed
 by fees and whipsaws (-20% to -50% OOS). That is the setting in
-`config.py` (`CRYPTO_*`), with the same caveat as the stock bot: one
-surviving combo out of 24 is weak evidence and may be luck.
+`config.py` (`BOT2_*`), with the same caveat as the stock bot: one
+surviving combo out of 24 is weak evidence and may be luck. On ETHA's own
+short history MA 20/50 was +10% OOS vs +1% B&H over 9 trades — consistent,
+but far too few trades to mean anything.
 
-How it runs: `crypto_bot.py` is a separate process (own log, state file,
-kill switch `KILL_SWITCH_CRYPTO`, IBKR client id 2). `CRYPTO_ENABLED`
-is **False** by default; flip it only after (1) confirming crypto trading
-permission is enabled on the IBKR account and (2) paper-running with
-`DRY_RUN = True`. Schedule with `schedule_crypto_bot.bat` (daily, 10:05,
-weekends included). Apply the same phases and pass/fail criteria as
-section 3, with the crypto-specific floor: stop if the crypto sleeve
-drops below 70% of its ticket (wider than stocks because a single 8%
-stop is a normal day in crypto).
+How it runs: `bot2.py` is a separate process (own `bot2.log`,
+`bot2_state.json`, kill switch `KILL_SWITCH_BOT2`, IBKR client id 2, so it
+runs alongside `bot.py`). `BOT2_ENABLED` is **False** by default; flip it
+only after a `DRY_RUN = True` paper run. Schedule with `schedule_bot2.bat`
+(weekdays 10:05). Apply the phases and pass/fail criteria of section 3
+to it separately, with a wider floor: stop if the bot-2 sleeve drops below
+70% of its ticket (an 8% stop is a normal day for ETH).
 
 ## 5. Effort estimate
 - Phase 0/1 are calendar time, not work: ~5 minutes/week of log review.

@@ -13,4 +13,4 @@ logs/
 *.log
 state.json
 paper_trades.csv
-crypto_state.json
+bot2_state.json

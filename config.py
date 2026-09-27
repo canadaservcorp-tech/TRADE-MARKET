@@ -59,23 +59,23 @@ STOP_LOSS_PCT = 0.05         # sell if down 5% from entry
 TAKE_PROFIT_PCT = 0.10       # sell if up 10%
 MAX_TRADES_PER_DAY = 3       # circuit breaker
 
-# --- Crypto bot (crypto_bot.py — separate process, separate state) ---
-# Trades a spot crypto pair on IBKR's PAXOS venue, 24/7, MA crossover on
-# daily bars. Chosen from crypto_backtest.py: ETH MA20/50 was the only
-# combo that beat buy-and-hold both in- and out-of-sample (still thin
-# evidence — see FEASIBILITY.md). Not all IBKR accounts have crypto
-# trading permission (Account Settings -> Trading Permissions -> Crypto).
-CRYPTO_ENABLED = False           # master switch: False = crypto_bot.py exits immediately
-CRYPTO_SYMBOL = "ETH"            # "BTC" or "ETH"
-CRYPTO_SHORT_WINDOW = 20
-CRYPTO_LONG_WINDOW = 50
-CRYPTO_POSITION_DOLLARS = 250    # fractional qty is allowed, so this is the whole ticket
-CRYPTO_STOP_LOSS_PCT = 0.08      # crypto moves ~3x stocks: wider stop / target
-CRYPTO_TAKE_PROFIT_PCT = 0.20
-CRYPTO_MAX_TRADES_PER_DAY = 1
-CRYPTO_CLIENT_ID = 2             # must differ from IBKR_CLIENT_ID so both bots can connect
-CRYPTO_STATE_FILE = "crypto_state.json"
-CRYPTO_KILL_SWITCH_FILE = "KILL_SWITCH_CRYPTO"   # KILL_SWITCH (stock bot's) also stops it
+# --- Bot 2 (bot2.py — separate process, separate state/log/kill switch) ---
+# Second position so the account isn't riding F alone. Default: ETHA, the
+# spot-Ether ETF (~$20/share) — IBKR does not offer direct crypto to
+# Canadian accounts, so the ETF is the tradable proxy. MA 20/50 was the
+# only setting that beat buy-and-hold in both backtest halves on 5y of
+# ETH-USD data (crypto_backtest.py); still thin evidence — see FEASIBILITY.md.
+BOT2_ENABLED = False             # master switch: False = bot2.py exits immediately
+BOT2_SYMBOL = "ETHA"             # or "IBIT" (spot-Bitcoin ETF, ~$48/share)
+BOT2_SHORT_WINDOW = 20
+BOT2_LONG_WINDOW = 50
+BOT2_POSITION_DOLLARS = 250      # whole shares only
+BOT2_STOP_LOSS_PCT = 0.08        # ETH moves ~3x a stock: wider stop / target
+BOT2_TAKE_PROFIT_PCT = 0.20
+BOT2_MAX_TRADES_PER_DAY = 1
+BOT2_CLIENT_ID = 2               # must differ from IBKR_CLIENT_ID so both bots can connect
+BOT2_STATE_FILE = "bot2_state.json"
+BOT2_KILL_SWITCH_FILE = "KILL_SWITCH_BOT2"   # KILL_SWITCH (bot.py's) also stops it
 
 # --- Kill switch ---
 # If this file exists (or env var KILL_SWITCH=1), the bot sells any open
