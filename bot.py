@@ -5,11 +5,13 @@ Strategy: selectable via config.STRATEGY. Risk layer enforces stops + daily cap.
 Orders are only attempted during regular market hours, and a kill switch
 (KILL_SWITCH file or KILL_SWITCH=1 env var) flattens the position and exits.
 
-Run:  python bot.py
+Run:  python bot.py           (loop every config.LOOP_SECONDS)
+      python bot.py --once    (one pass, then exit — for a daily scheduled task)
 Stop: Ctrl+C  (or create the kill-switch file)
 """
 
 import os
+import sys
 import csv
 import time
 import json
@@ -125,7 +127,7 @@ def act(qt, acct, sym_id, side, qty, price, state, reason="strategy signal"):
     return True
 
 
-def main():
+def main(once=False):
     mode = "DRY_RUN (no real orders)" if config.DRY_RUN else "LIVE — REAL MONEY"
     log.info(f"Starting. Mode: {mode}. Broker: {config.BROKER}. "
              f"Environment: {config.ENVIRONMENT}. "
@@ -165,6 +167,8 @@ def main():
             # 0.5 Market-hours guard — no orders outside regular hours
             if not qt.market_open_now("NASDAQ"):
                 log.info("Market closed. No orders will be attempted.")
+                if once:
+                    return
                 time.sleep(config.LOOP_SECONDS)
                 continue
 
@@ -240,11 +244,13 @@ def main():
             log.error(f"Loop error (bot keeps running): {e}")
             qt = None  # rebuild the client next loop in case auth went stale
 
+        if once:
+            return
         time.sleep(config.LOOP_SECONDS)
 
 
 if __name__ == "__main__":
     try:
-        main()
+        main(once="--once" in sys.argv[1:])
     except KeyboardInterrupt:
         log.info("Stopped by user. Clean exit.")
