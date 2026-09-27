@@ -3,22 +3,22 @@
 # --- SAFETY: stays True until the owner has watched the bot and trusts it ---
 # True  = logs the trade it WOULD place, sends nothing. Zero money at risk.
 # False = places REAL orders with REAL money.
-DRY_RUN = True
+DRY_RUN = False
 
 # --- Broker: "questrade" or "ibkr" ---
 # "ibkr" needs IB Gateway or TWS running locally with the API enabled
 # (see README "IBKR setup"). Point IBKR_PORT at the PAPER port first.
-BROKER = "questrade"
+BROKER = "ibkr"
 
 # IBKR connection settings (only used when BROKER = "ibkr").
 # Ports — TWS: paper 7497 / live 7496.  IB Gateway: paper 4002 / live 4001.
 IBKR_HOST = "127.0.0.1"
-IBKR_PORT = 7497
+IBKR_PORT = 7496
 IBKR_CLIENT_ID = 1
 # Belt-and-braces: even if DRY_RUN were ever flipped, orders addressed to a
 # LIVE IBKR account (id starts with "U") are refused unless this is True.
 # Paper accounts (id starts with "D") are unaffected.
-IBKR_ALLOW_LIVE_ORDERS = False
+IBKR_ALLOW_LIVE_ORDERS = True
 
 # --- Environment: "live" or "practice" (Questrade only) ---
 # Questrade offers a free practice account with its own login portal
