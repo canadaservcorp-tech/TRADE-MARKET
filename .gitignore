@@ -14,3 +14,4 @@ logs/
 state.json
 paper_trades.csv
 bot2_state.json
+rotation_state.json

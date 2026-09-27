@@ -1,7 +1,10 @@
 """
 Trading bot (Questrade or IBKR via config.BROKER) — DRY_RUN by default
 (logs trades, sends nothing).
-Strategy: selectable via config.STRATEGY. Risk layer enforces stops + daily cap.
+Strategy: selectable via config.STRATEGY. "ma_cross"/"rsi" trade config.SYMBOL
+with the stop/target/daily-cap risk layer below; "rotation" hands the whole
+loop to rotation.Rotation (monthly ETF momentum rotation over
+config.ROTATION_UNIVERSE, capped at MAX_POSITION_DOLLARS).
 Orders are only attempted during regular market hours, and a kill switch
 (KILL_SWITCH file or KILL_SWITCH=1 env var) flattens the position and exits.
 
@@ -22,6 +25,7 @@ import config
 from questrade import Questrade, OrderError
 from ibkr import IBKR
 from strategies import get_signal_fn, ma_snapshot
+from rotation import Rotation
 
 logging.basicConfig(
     level=logging.INFO,
@@ -128,6 +132,19 @@ def act(qt, acct, sym_id, side, qty, price, state, reason="strategy signal"):
 
 
 def main(once=False):
+    if config.STRATEGY == "rotation":
+        Rotation(
+            name="bot",
+            universe=config.ROTATION_UNIVERSE,
+            top_n=config.ROTATION_TOP_N,
+            capital=config.MAX_POSITION_DOLLARS,
+            client_id=config.IBKR_CLIENT_ID,
+            state_file="rotation_state.json",
+            kill_files=[config.KILL_SWITCH_FILE],
+            log=log,
+        ).run(once=once)
+        return
+
     mode = "DRY_RUN (no real orders)" if config.DRY_RUN else "LIVE — REAL MONEY"
     log.info(f"Starting. Mode: {mode}. Broker: {config.BROKER}. "
              f"Environment: {config.ENVIRONMENT}. "

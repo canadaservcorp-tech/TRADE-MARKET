@@ -106,7 +106,7 @@ claims need >= 30 trades or >= 1 full market cycle.
 4. **Realistic expectations**: a good retail trend-following system targets
    roughly 5-15%/year with 10-25% drawdowns. On $500 that is $25-75/year.
 
-## 4b. Second bot: monthly ETF momentum rotation
+## 4b. Monthly ETF momentum rotation (now bot 1's strategy; bot 2 optional)
 
 Rationale (replaces the earlier single-ETF MA idea): instead of timing one
 instrument with a crossover that fires ~2x/year, rank a basket of ETFs
@@ -140,16 +140,29 @@ same orders cost 6-11%. Conclusion: run it at $250 as a *plumbing test
 only* (top-1 to minimise fee drag); it becomes a real strategy test at
 about $2,000, where top-2/3 gives the best drawdown profile.
 
-How it runs: `bot2.py` is a separate process (own `bot2.log`,
-`bot2_state.json`, kill switch `KILL_SWITCH_BOT2`, IBKR client id 2, so it
-runs alongside `bot.py`). On the first trading day of each month it pulls a
-year of closes for the universe, ranks, sells drop-outs and buys the new
-top names with equal dollars; on other days it only logs. `BOT2_ENABLED`
-is **False** by default; flip it only after a `DRY_RUN = True` run has
-shown sensible scores and orders in `bot2.log`. Schedule with
-`schedule_bot2.bat` (weekdays 10:05). Pass/fail for this sleeve: after
-6 months / 12+ orders, live fills must match the month-end backtest within
-fees + 0.5%, and equity must stay above 80% of the sleeve.
+How it runs: `config.STRATEGY = "rotation"` makes `bot.py` hand its loop to
+`rotation.Rotation` (state in `rotation_state.json`, same `bot.log`,
+`KILL_SWITCH`, client id 1, `schedule_bot.bat` weekdays 10:00). On the
+first trading day of each month it pulls a year of closes for
+`ROTATION_UNIVERSE`, ranks, sells drop-outs and buys the new top names with
+equal dollars up to `MAX_POSITION_DOLLARS`; on other days it only logs.
+`STRATEGY = "ma_cross"` restores the old F bot. **At the current $40 cap it
+cannot buy a share of most of the universe** — raise the cap once funds are
+deposited (top-1 until ~$2,000, then top-2/3).
+
+`bot2.py` runs the same engine as a second sleeve (own log/state/kill
+switch, client id 2) but is only meaningful with a universe *disjoint* from
+bot 1's — both read real account positions, so a shared ticker would be
+double-counted, and `bot2.py` refuses to start on overlap. The obvious
+disjoint candidate, US sector rotation (XLB/XLF/XLI/XLK/XLP/XLU/XLV/XLY,
+`python rotation_backtest.py sectors`, 2000-2026), **failed**: it trailed
+SPY in every window (OOS +9%/yr vs +15%; at $250 it lost 88% over 26 years
+to fees). So bot 2 stays disabled; one rotation sleeve with all the
+capital is the better plan.
+
+Pass/fail for the rotation sleeve: after 6 months / 12+ orders, live fills
+must match the month-end backtest within fees + 0.5%, and equity must stay
+above 80% of the sleeve.
 
 ## 5. Effort estimate
 - Phase 0/1 are calendar time, not work: ~5 minutes/week of log review.

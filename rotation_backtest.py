@@ -6,7 +6,8 @@ momentum score is positive (otherwise that slot sits in cash). Whole shares,
 $1 commission per order. Reported at two capital levels so the fee drag
 at small size is explicit. Walk-forward: first 60% in-sample, last 40% out.
 
-Run: python rotation_backtest.py
+Run: python rotation_backtest.py            (bot 2 universe: asset classes)
+     python rotation_backtest.py sectors    (bot 1 universe: US sectors)
 """
 import warnings
 warnings.filterwarnings("ignore")
@@ -17,15 +18,21 @@ from strategies import rotation_targets
 
 # Cheap share classes (all < $100) so whole shares fit a $250 sleeve:
 # US large / US growth / US small / intl dev / EM / long Treasuries / gold / energy / REIT
-UNIVERSE = ["SCHX", "SCHG", "SCHA", "SCHF", "SCHE", "SPTL", "IAU", "XLE", "SCHH"]
-BENCH = "SCHX"
+UNIVERSES = {
+    "assets": (["SCHX", "SCHG", "SCHA", "SCHF", "SCHE", "SPTL", "IAU", "XLE", "SCHH"],
+               "SCHX", "2011-01-01"),   # SCHH (youngest) starts 2011-01
+    # SPDR sectors (1998-): bot 1's universe, disjoint from bot 2's so the two
+    # bots never hold the same ticker (they'd misread each other's shares).
+    "sectors": (["XLB", "XLF", "XLI", "XLK", "XLP", "XLU", "XLV", "XLY"],
+                "SPY", "1999-01-01"),
+}
+UNIVERSE, BENCH, START = UNIVERSES[sys.argv[1] if len(sys.argv) > 1 else "assets"]
 LOOKBACKS = (3, 6, 12)   # months
 FEE = 1.0
-START = "2011-01-01"     # SCHH (youngest) starts 2011-01
 
 
 def month_closes():
-    df = yf.download(UNIVERSE, start=START, interval="1d", auto_adjust=True, progress=False)["Close"]
+    df = yf.download(UNIVERSE + [BENCH], start=START, interval="1d", auto_adjust=True, progress=False)["Close"]
     return df.dropna(), df.dropna().resample("ME").last()
 
 
@@ -35,7 +42,7 @@ def rotate(monthly, capital, top_n, lookbacks=LOOKBACKS):
     cash, hold, trades, eq = capital, {}, 0, []
     for i in range(max(lookbacks), len(monthly) - 1):
         px = monthly.iloc[i]
-        hist = {s: monthly[s].iloc[: i + 1].tolist() for s in monthly.columns}
+        hist = {s: monthly[s].iloc[: i + 1].tolist() for s in UNIVERSE}
         target = rotation_targets(hist, top_n, lookbacks, days_per_month=1)
         # sell what is no longer wanted
         for sym in [s for s in hold if s not in target]:
