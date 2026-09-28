@@ -40,8 +40,8 @@ STRATEGY = "rotation"
 # emerging / long Treasuries / gold / energy / REITs. rotation_backtest.py
 # (2012-2026, $1/order): beat buy-and-hold out-of-sample with about half the
 # drawdown, lagged it in the 2012-20 US bull run; fees make it a plumbing
-# test below ~$2,000. NOTE: at MAX_POSITION_DOLLARS = 40 it cannot afford a
-# single share of most of these and will only log "Can't afford".
+# test below ~$2,000. At $100 only the cheaper names (SCHX/SCHG/SCHA/SCHF/
+# SCHE/SPTL/XLE/SCHH, $22-62) fit one share; IAU ($81) fits, SCHG at $36 gets 2.
 ROTATION_UNIVERSE = ["SCHX", "SCHG", "SCHA", "SCHF", "SCHE", "SPTL", "IAU", "XLE", "SCHH"]
 ROTATION_TOP_N = 1     # 1 while the sleeve is small (least fee drag); 2-3 from ~$2,000
 
@@ -68,7 +68,7 @@ BACKTEST_MA_GRID = [(10, 30), (20, 50), (50, 200)]
 PAPER_STARTING_CASH = 50.0
 
 # --- Risk controls ---
-MAX_POSITION_DOLLARS = 40    # with a $50 deposit, keep this under the balance
+MAX_POSITION_DOLLARS = 100   # total rotation sleeve; keep this under the cash balance
 STOP_LOSS_PCT = 0.05         # sell if down 5% from entry
 TAKE_PROFIT_PCT = 0.10       # sell if up 10%
 MAX_TRADES_PER_DAY = 3       # circuit breaker
