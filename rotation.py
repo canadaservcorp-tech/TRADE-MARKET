@@ -90,6 +90,7 @@ class Rotation:
         return held
 
     def rebalance(self, qt, acct, contracts, prices, closes, state):
+        """Return True once every target is held (or target is cash)."""
         held = self.holdings(qt, acct, contracts, state)
         targets = rotation_targets(closes, self.top_n)
         scores = {s: momentum_score(c) for s, c in closes.items()}
@@ -104,7 +105,8 @@ class Rotation:
 
         new = [s for s in targets if s not in held]
         if not new:
-            return
+            return True
+        done = True
         if config.DRY_RUN:
             cash = state["paper_cash"]
         else:
@@ -117,9 +119,13 @@ class Rotation:
                 if self.act(qt, acct, sym, contracts[sym], "buy", qty, prices[sym], state,
                             reason=f"rank {targets.index(sym) + 1}"):
                     cash -= qty * prices[sym]
+                else:
+                    done = False
             else:
+                done = False
                 self.log.info(f"Can't afford 1 share of {sym} at ${prices[sym]:.2f} "
                               f"with ${slice_:.2f}. Skipping. (Raise the cap.)")
+        return done
 
     # --- main loop -------------------------------------------------------
     def run(self, once=False):
@@ -163,8 +169,10 @@ class Rotation:
                 else:
                     prices = {s: qt.last_price(c) for s, c in contracts.items()}
                     closes = {s: qt.daily_closes(c, HISTORY_DAYS) for s, c in contracts.items()}
-                    self.rebalance(qt, acct, contracts, prices, closes, state)
-                    state["last_rebalance_month"] = month
+                    if self.rebalance(qt, acct, contracts, prices, closes, state):
+                        state["last_rebalance_month"] = month
+                    else:
+                        self.log.info(f"Rebalance for {month} incomplete; will retry next run.")
                     if config.DRY_RUN:
                         value = state["paper_cash"] + sum(
                             q * prices[s] for s, q in state["paper_positions"].items())
